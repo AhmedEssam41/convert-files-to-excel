@@ -232,9 +232,13 @@ def download(filename):
         return send_file(file_path, as_attachment=True)
     return "❌ الملف غير موجود", 404
 
+@app.route("/health")
+def health_check():
+    return "OK", 200
+
 # ------------------------
 # Run
 # ------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)  
