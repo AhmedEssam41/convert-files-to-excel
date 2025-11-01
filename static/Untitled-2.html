@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASCII Runner متقدم جدًا</title>
+<style>
+body {
+  font-family: monospace;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+#game-container {
+  background: transparent;
+  color: rgb(27, 43, 49);
+  direction:ltr;
+  width: 500px;
+  height: 300px;
+  margin: 0 auto;
+  text-align: center;
+  /* position: absolute;
+  top: 50%;
+  left: 50%; */
+}
+#score {
+  font-size: 20px;
+  text-align: left;
+}
+#game {
+  white-space: pre;
+  font-size: 18px;
+  line-height: 1.2;
+}
+#restart {
+  display: none;
+  font-size: 18px;
+  color: rgb(27, 43, 49);
+  text-align: center;
+}
+
+@media (max-height: 600px) {
+  #game {
+    font-size: 16px;
+  }
+}
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="score">score: 0 <br> stars: 0 </div>
+  <div id="game-over" style="text-align: center; display: none; font-size: 20px;">gameover!</div>
+  <pre id="game"></pre>
+  <div id="restart">click to try again</div>
+</div>
+
+<script>
+// عناصر DOM
+const gameEl = document.getElementById('game');
+const scoreEl = document.getElementById('score');
+const game_Over = document.getElementById('game-over');
+const restartBtn = document.getElementById('restart');
+
+// حالة اللعبة
+let gameState = {
+  width: 40,
+  height: 6,
+  playerPos: { x: 2, y: 5 },
+  jumpsLeft: 2,
+  isJumping: false,
+  obstacles: [],
+  coins: [],
+  score: 0,
+  stars: 0, // عداد النجوم
+  gameOver: false,
+  gameSpeed: 120,
+  gameInterval: null,
+  obstacleInterval: null,
+  isKeyPressed: false,
+  isMousePressed: false,
+  isTouchPressed: false,
+  lastInputTime: 0
+};
+
+// الأنواع الثلاثة من الأعمدة
+const columnTypes = [
+  { height: 1, type: 'ground_short' }, // عمود أرضي قصير
+  { height: 2, type: 'ground_tall' },  // عمود أرضي طويل
+  { height: 1, type: 'elevated', elevation: 1 } // عمود مرتفع بوحدة واحدة
+];
+
+// إنشاء لوحة فارغة
+function initBoard() {
+  let board = [];
+  for (let i = 0; i < gameState.height; i++) {
+    board.push(new Array(gameState.width).fill(' '));
+  }
+  return board;
+}
+
+// إيجاد أعلى منصة أسفل اللاعب
+function getSurfaceBelow(x) {
+  let maxY = gameState.height - 1; // الأرض
+  gameState.obstacles.forEach(obs => {
+    if ((obs.type === 'ground_short' || obs.type === 'ground_tall' || obs.type === 'elevated') &&
+        x >= obs.x && x < obs.x + obs.width) {
+      let surfaceY = obs.y - 1;
+      if (surfaceY < maxY) maxY = surfaceY;
+    }
+  });
+  return maxY;
+}
+
+// التحقق من وجود مسار آمن
+function hasSafePath() {
+  const safeZoneStart = gameState.playerPos.x + 1;
+  const safeZoneEnd = gameState.playerPos.x + 6;
+
+  for (let x = safeZoneStart; x < safeZoneEnd; x++) {
+    let hasGround = false;
+    let hasSpike = false;
+
+    // التحقق من الأرض أو الأعمدة
+    for (let obs of gameState.obstacles) {
+      if ((obs.type === 'ground_short' || obs.type === 'ground_tall' || obs.type === 'elevated') &&
+          x >= obs.x && x < obs.x + obs.width) {
+        hasGround = true;
+        break;
+      }
+    }
+
+    // التحقق من الأشواك
+    for (let obs of gameState.obstacles) {
+      if (obs.type === 'spike' && x >= obs.x && x < obs.x + obs.width && obs.y === gameState.height - 1) {
+        hasSpike = true;
+        break;
+      }
+    }
+
+    if (hasSpike && !hasGround) return false;
+
+    // التحقق من الأشواك في مقدمة عمود مرتفع
+    for (let obs of gameState.obstacles) {
+      if (obs.type === 'elevated' && x >= obs.x - 1 && x < obs.x) {
+        for (let spike of gameState.obstacles) {
+          if (spike.type === 'spike' && spike.x <= obs.x && spike.x + spike.width > obs.x &&
+              spike.y === obs.y - 1) {
+            return false; // أشواك في مقدمة عمود مرتفع
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+
+// التحقق من عدم تداخل العقبات
+function hasNoOverlap(newObs) {
+  return !gameState.obstacles.some(obs =>
+    newObs.x < obs.x + obs.width && newObs.x + newObs.width > obs.x &&
+    newObs.y < obs.y + (obs.colHeight || 1) && newObs.y + (newObs.colHeight || 1) > obs.y
+  );
+}
+
+// التحقق من عدم وجود أشواك متتالية
+function noConsecutiveSpikes(newObs) {
+  if (newObs.type !== 'spike') return true;
+  return !gameState.obstacles.some(obs =>
+    obs.type === 'spike' && Math.abs(obs.x - newObs.x) < 5
+  );
+}
+
+// إنشاء عقبة جديدة
+function createObstacle() {
+  if (gameState.gameOver) return;
+
+  const minSpace = 4;
+  if (gameState.obstacles.length > 0) {
+    const lastObstacle = gameState.obstacles[gameState.obstacles.length - 1];
+    if (lastObstacle.x + lastObstacle.width > gameState.width - minSpace) return;
+  }
+
+  let newObs;
+  let toAdd = [];
+  let attempts = 0;
+  let safePath = false;
+
+  while (!safePath && attempts < 10) {
+    attempts++;
+    const rand = Math.random();
+    const isSpike = rand < 0.3;
+    const isCoin = rand >= 0.3 && rand < 0.5;
+
+    if (isCoin) {
+      let yPos = Math.floor(Math.random() * (gameState.height - 2)) + 1; // في السماء أو فوق الأعمدة أو الأرض
+      let onGround = Math.random() < 0.4;
+      let onColumn = false;
+      let possibleCoinLocations = gameState.obstacles.filter(o =>
+        (o.type === 'ground_short' || o.type === 'ground_tall' || o.type === 'elevated') &&
+        o.x > gameState.width - 15
+      );
+
+      let xPos = gameState.width - 1;
+      if (onGround) {
+        yPos = gameState.height - 1;
+      } else if (possibleCoinLocations.length > 0 && Math.random() < 0.3) {
+        const col = possibleCoinLocations[Math.floor(Math.random() * possibleCoinLocations.length)];
+        yPos = col.y - 2; // فوق العمود بمسافة واحدة
+        onColumn = true;
+        xPos = col.x + Math.floor(Math.random() * (col.width - 1));
+      }
+
+      newObs = {
+        x: xPos,
+        y: yPos,
+        shape: ['*'],
+        type: 'coin',
+        width: 1,
+        onColumn: onColumn
+      };
+      toAdd = [newObs];
+    } else if (isSpike) {
+      let spikeWidth = Math.floor(Math.random() * 3) + 1; // أشواك على الأرض بحد أقصى 3
+      let yPos = gameState.height - 1; // ملامسة الأرض
+      let onColumn = false;
+      let possibleSpikeLocations = gameState.obstacles.filter(o =>
+        (o.type === 'ground_short' || o.type === 'ground_tall' || o.type === 'elevated') &&
+        o.x > gameState.width - 15
+      );
+
+      let xPos = gameState.width - 1;
+      if (possibleSpikeLocations.length > 0 && Math.random() < 0.5) {
+        const col = possibleSpikeLocations[Math.floor(Math.random() * possibleSpikeLocations.length)];
+        yPos = col.y - 1;
+        onColumn = true;
+        let maxSpikeW = Math.floor(col.width / 3);
+        spikeWidth = Math.min(spikeWidth, maxSpikeW || 1);
+        xPos = col.x + col.width - spikeWidth;
+      }
+
+      const spikeShape = new Array(spikeWidth).fill('^').join('');
+      newObs = {
+        x: xPos,
+        y: yPos,
+        shape: [spikeShape],
+        type: 'spike',
+        width: spikeWidth,
+        onColumn: onColumn
+      };
+      toAdd = [newObs];
+    } else {
+      const obstacleWidth = Math.floor(Math.random() * 4) + 3; // عرض الأعمدة 3 أو أكثر
+      const col = columnTypes[Math.floor(Math.random() * columnTypes.length)];
+      const dashCount = obstacleWidth - 2;
+      const topShape = `|${new Array(dashCount).fill('-').join('')}|`;
+      const bottomShape = `|${new Array(dashCount).fill(' ').join('')}|`;
+      let colShape = [topShape];
+      if (col.type === 'ground_tall') colShape.push(bottomShape);
+
+      newObs = {
+        x: gameState.width - 1,
+        y: gameState.height - col.height - (col.elevation || 0), // ملامسة الأرض إلا إذا كان مرتفعًا
+        shape: colShape,
+        type: col.type,
+        colHeight: col.height,
+        width: obstacleWidth,
+        elevated: col.type === 'elevated'
+      };
+
+      let spikeAdded = false;
+      if (Math.random() < 0.2) {
+        let maxSpikeW = Math.floor(obstacleWidth / 3);
+        let spikeWidth = Math.floor(Math.random() * maxSpikeW) + 1;
+
+        const spikeOnColumn = {
+          x: newObs.x + obstacleWidth - spikeWidth,
+          y: newObs.y - 1,
+          shape: [new Array(spikeWidth).fill('^').join('')],
+          type: 'spike',
+          width: spikeWidth,
+          onColumn: true
+        };
+        toAdd = [newObs, spikeOnColumn];
+        spikeAdded = true;
+      } else {
+        toAdd = [newObs];
+      }
+    }
+
+    let canAdd = true;
+    const addingAtEnd = toAdd[0].x === gameState.width - 1;
+    if (addingAtEnd && gameState.obstacles.length > 0) {
+      const last = gameState.obstacles[gameState.obstacles.length - 1];
+      const space = toAdd[0].x - (last.x + last.width);
+      let minRequired = minSpace;
+      if (last.type === 'spike' && !last.onColumn && (toAdd[0].type === 'ground_short' || toAdd[0].type === 'ground_tall')) {
+        minRequired = 7;
+      }
+      if (space < minRequired) {
+        canAdd = false;
+      }
+    }
+
+    if (canAdd && hasNoOverlap(toAdd[0]) && noConsecutiveSpikes(toAdd[0])) {
+      toAdd.forEach(obs => {
+        if (obs.type === 'coin') {
+          gameState.coins.push(obs);
+        } else {
+          gameState.obstacles.push(obs);
+        }
+      });
+      safePath = hasSafePath();
+      if (!safePath) {
+        toAdd.reverse().forEach(obs => {
+          if (obs.type === 'coin') {
+            gameState.coins.pop();
+          } else {
+            gameState.obstacles.pop();
+          }
+        });
+      }
+    }
+  }
+}
+
+// تحديث اللعبة
+function update() {
+  if (gameState.gameOver) return;
+
+  let board = initBoard();
+  let toRemoveObs = [];
+  let toRemoveCoins = [];
+
+  // تحريك العقبات ورسمها
+  gameState.obstacles.forEach((obs, index) => {
+    obs.x -= 1;
+    if (obs.x + obs.width < 0) {
+      toRemoveObs.push(index);
+    } else if (obs.x + obs.width >= 0 && obs.x < gameState.width) {
+      for (let line = 0; line < obs.shape.length; line++) {
+        for (let i = 0; i < obs.shape[line].length; i++) {
+          const drawX = obs.x + i;
+          const drawY = obs.y + line;
+          if (drawX >= 0 && drawX < gameState.width && drawY >= 0 && drawY < gameState.height) {
+            board[drawY][drawX] = obs.shape[line][i];
+          }
+        }
+      }
+    }
+  });
+
+  // تحريك ورسم النجوم
+  gameState.coins.forEach((coin, index) => {
+    coin.x -= 1;
+    if (coin.x + coin.width < 0) {
+      toRemoveCoins.push(index);
+    } else if (coin.x + coin.width >= 0 && coin.x < gameState.width) {
+      for (let line = 0; line < coin.shape.length; line++) {
+        for (let i = 0; i < coin.shape[line].length; i++) {
+          const drawX = coin.x + i;
+          const drawY = coin.y + line;
+          if (drawX >= 0 && drawX < gameState.width && drawY >= 0 && drawY < gameState.height) {
+            board[drawY][drawX] = coin.shape[line][i];
+          }
+        }
+      }
+    }
+  });
+
+  toRemoveObs.reverse().forEach(index => gameState.obstacles.splice(index, 1));
+  toRemoveCoins.reverse().forEach(index => gameState.coins.splice(index, 1));
+
+  // تحديث موقع اللاعب
+  let surfaceY = getSurfaceBelow(gameState.playerPos.x);
+  if (!gameState.isJumping && gameState.playerPos.y < surfaceY) gameState.playerPos.y++;
+  if (gameState.playerPos.y === surfaceY) gameState.jumpsLeft = 2;
+
+  // التحقق من الاصطدام بالشوك
+  for (let obs of gameState.obstacles) {
+    if (obs.type === 'spike') {
+      for (let line = 0; line < obs.shape.length; line++) {
+        for (let i = 0; i < obs.shape[line].length; i++) {
+          if (obs.shape[line][i] !== ' ') {
+            const spikeX = obs.x + i;
+            const spikeY = obs.y + line;
+            if (gameState.playerPos.y === spikeY && gameState.playerPos.x === spikeX) {
+              endGame();
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // التحقق من التصادم بجوانب الأعمدة (الجانب الأيسر فقط)
+  for (let obs of gameState.obstacles) {
+    if (obs.type === 'ground_short' || obs.type === 'ground_tall' || obs.type === 'elevated') {
+      if (gameState.playerPos.x === obs.x - 1 &&
+          gameState.playerPos.y >= obs.y && gameState.playerPos.y < obs.y + obs.colHeight) {
+        endGame();
+        return;
+      }
+      // التحقق من الاصطدام من الأسفل للأعمدة المرتفعة
+      if (obs.type === 'elevated' && gameState.playerPos.y === obs.y &&
+          gameState.playerPos.x >= obs.x && gameState.playerPos.x < obs.x + obs.width) {
+        endGame();
+        return;
+      }
+    }
+  }
+
+  // التحقق من جمع النجوم
+  gameState.coins = gameState.coins.filter((coin, index) => {
+    if (gameState.playerPos.x === coin.x && gameState.playerPos.y === coin.y) {
+      gameState.stars += 1; // زيادة عداد النجوم
+      gameState.score += 10; // زيادة النقاط بـ10 لكل نجمة
+      return false; // إزالة النجمة
+    }
+    return true;
+  });
+
+  // رسم اللاعب
+  if (gameState.playerPos.y >= 0 && gameState.playerPos.y < gameState.height &&
+      gameState.playerPos.x >= 0 && gameState.playerPos.x < gameState.width) {
+    board[gameState.playerPos.y][gameState.playerPos.x] = 'O';
+  }
+
+  // رسم الأرض
+  let groundLine = new Array(gameState.width).fill('_');
+  board.push(groundLine);
+
+  // عرض اللعبة
+  gameEl.textContent = board.map(r => r.join('')).join('\n');
+
+  // تحديث النقاط وعداد النجوم
+  gameState.score++;
+  scoreEl.innerHTML = `score: ${gameState.score}<br> stars: ${gameState.stars}`;
+
+  // زيادة السرعة تدريجيًا
+  if (gameState.score % 100 === 0 && gameState.gameSpeed > 50) {
+    gameState.gameSpeed -= 2;
+    clearInterval(gameState.gameInterval);
+    gameState.gameInterval = setInterval(update, gameState.gameSpeed);
+  }
+}
+
+// القفز
+function jump() {
+  if (gameState.jumpsLeft <= 0 || Date.now() - gameState.lastInputTime < 100) return;
+  gameState.lastInputTime = Date.now();
+  gameState.jumpsLeft--;
+  gameState.isJumping = true;
+  let jumpHeight = 2;
+  let up = 0;
+  let jumpInterval = setInterval(() => {
+    if (up >= jumpHeight) {
+      clearInterval(jumpInterval);
+      let fallInterval = setInterval(() => {
+        let surfaceY = getSurfaceBelow(gameState.playerPos.x);
+        if (gameState.playerPos.y >= surfaceY) {
+          gameState.playerPos.y = surfaceY;
+          clearInterval(fallInterval);
+          gameState.isJumping = false;
+        } else {
+          gameState.playerPos.y++;
+        }
+      }, gameState.gameSpeed);
+    } else {
+      gameState.playerPos.y--;
+      up++;
+    }
+  }, gameState.gameSpeed);
+}
+
+// إنهاء اللعبة
+function endGame() {
+  gameState.gameOver = true;
+  restartBtn.style.display = 'block';
+  //scoreEl.innerHTML = ` score: ${gameState.score} <br> stars: ${gameState.stars}`;
+  game_Over.style.display = "block";
+  clearInterval(gameState.gameInterval);
+  clearInterval(gameState.obstacleInterval);
+}
+
+// إعادة تشغيل اللعبة
+function restartGame() {
+  if (gameState.gameInterval) clearInterval(gameState.gameInterval);
+  if (gameState.obstacleInterval) clearInterval(gameState.obstacleInterval);
+
+  gameState = {
+    width: 40,
+    height: 6,
+    playerPos: { x: 2, y: 5 },
+    jumpsLeft: 2,
+    isJumping: false,
+    obstacles: [],
+    coins: [],
+    score: 0,
+    stars: 0,
+    gameOver: false,
+    gameSpeed: 120,
+    gameInterval: null,
+    obstacleInterval: null,
+    isKeyPressed: false,
+    isMousePressed: false,
+    isTouchPressed: false,
+    lastInputTime: 0
+  };
+
+  restartBtn.style.display = 'none';
+  //scoreEl.textContent = `النقاط: ${gameState.score} | النجوم: ${gameState.stars}`;
+  game_Over.style.display = "none";
+  gameState.gameInterval = setInterval(update, gameState.gameSpeed);
+  gameState.obstacleInterval = setInterval(() => {
+    if (!gameState.gameOver) createObstacle();
+  }, 800 + Math.random() * 1500);
+
+  update();
+}
+
+function stopGame() { 
+  restartGame(); 
+  if (gameState.gameInterval) 
+  clearInterval(gameState.gameInterval); 
+  if (gameState.obstacleInterval) 
+  clearInterval(gameState.obstacleInterval); 
+  gameEl.textContent = ''; 
+  scoreEl.innerHTML = `score: ${gameState.score}<br> stars: ${gameState.stars}`;
+  restartBtn.style.display = 'none'; 
+}
+
+// إدارة الإدخال
+function handleInput() {
+  if (gameState.gameOver) restartGame();
+  else jump();
+}
+
+document.addEventListener('click', function startOnClick() {
+    restartGame();
+    document.removeEventListener('click', startOnClick);
+});
+
+// التحكم باللوحة المفاتيح
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.key === ' ' || e.code === 'ArrowUp') {
+    if (!gameState.isKeyPressed) {
+      handleInput();
+      gameState.isKeyPressed = true;
+    }
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'Space' || e.key === ' ' || e.code === 'ArrowUp') {
+    gameState.isKeyPressed = false;
+  }
+});
+
+// التحكم بالماوس
+document.addEventListener('mousedown', (e) => {
+  if (!gameState.isMousePressed) {
+    handleInput();
+    gameState.isMousePressed = true;
+  }
+  e.preventDefault();
+});
+
+document.addEventListener('mouseup', (e) => {
+  gameState.isMousePressed = false;
+});
+
+// التحكم باللمس
+document.addEventListener('touchstart', (e) => {
+  if (!gameState.isTouchPressed) {
+    handleInput();
+    gameState.isTouchPressed = true;
+  }
+  e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('touchend', (e) => {
+  gameState.isTouchPressed = false;
+});
+
+window.addEventListener('message', (event) => {
+    if (event.data === 'startGame') restartGame();
+    if (event.data === 'stopGame') stopGame();
+});
+
+restartBtn.addEventListener('click', restartGame);
+</script>
+</body>
+</html>

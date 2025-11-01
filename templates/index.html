@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>محول الملفات إلى Excel</title>
+    <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to top , #c3e6fe 0%, #112a42 60%, #020b15 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #031325 50%, #56c0f9 100%);
+            color: white;
+            padding: 30px 0;
+            direction: rtl;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-top: 10px;
+        }
+
+        .icon {
+            width: 40px;
+            height: 40px;
+            fill: currentColor;
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 40px 0;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            direction: ltr;
+            text-align: left;
+        }
+
+        .section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #0d47a1;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* File Upload */
+        .upload-area {
+            border: 3px dashed #42a5f5;
+            border-radius: 20px;
+            padding: 60px 20px;
+            text-align: center;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .upload-area:hover {
+            border-color: #1976d2;
+            background: linear-gradient(135deg, #bbdefb 0%, #e1bee7 100%);
+            transform: scale(1.02);
+        }
+
+        /* الغشاء */
+#uploadArea.drag-over::before {
+    content: "+";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 8rem;
+    color: #b3d9fa; /* أخضر */
+    z-index: 8;
+    -webkit-text-stroke: 2px rgb(60, 106, 255);
+}
+
+#uploadArea.drag-over {
+    position: relative;
+    background: rgba(1, 139, 252, 0.4); /* غشاء شفاف */
+    opacity: 0.7;
+    transform: scale(1.02);
+}
+
+        .upload-area.file-uploaded {
+            border-color: #4caf50;
+            background: linear-gradient(135deg, #e8f5e8 0%, #f1f8e9 100%);
+        }
+
+        .upload-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            opacity: 0.7;
+        }
+
+        .upload-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+        .upload-subtext {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .file-info {
+            color: #4caf50;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+
+        /* Columns Configuration */
+        .columns-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .add-column-btn {
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(25, 118, 210, 0.3);
+        }
+
+        .add-column-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(25, 118, 210, 0.4);
+        }
+
+        .columns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .column-item {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid #bbdefb;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .column-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .column-label {
+            font-weight: 600;
+            color: #0d47a1;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .column-input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .column-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e3f2fd;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .column-input:focus {
+            outline: none;
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+        }
+
+        .remove-column-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .remove-column-btn:hover {
+            background: #d32f2f;
+            transform: scale(1.1);
+        }
+
+        /* Process Button */
+        .process-section {
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .process-btn {
+            background: linear-gradient(135deg, #3f51b5 0%, #1976d2 50%, #00bcd4 100%);
+            color: white;
+            border: none;
+            padding: 20px 50px;
+            border-radius: 20px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+            box-shadow: 0 8px 30px rgba(63, 81, 181, 0.4);
+            display: inline-flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .process-btn:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 10px #2b5471,
+            0 10px 20px #2b5471, 0 10px 40px #2b5471;
+            letter-spacing: 1px;
+        }
+
+        .process-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid rgb(187, 238, 255);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Data Preview */
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .export-btn {
+            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+        }
+
+        .export-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+        }
+
+        .table-container {
+            overflow-x: auto;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            direction: ltr;
+            text-align: left;
+        }
+
+        .data-table th {
+            background: linear-gradient(135deg, #1976d2 0%, #3f51b5 100%);
+            color: white;
+            padding: 20px;
+            text-align: right;
+            font-weight: 600;
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .data-table th:last-child {
+            border-left: none;
+        }
+
+        .data-table td {
+            padding: 15px 20px;
+            border-left: 1px solid #e0e0e0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .data-table td:last-child {
+            border-left: none;
+        }
+
+        .data-table tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .data-table tr:hover {
+            background: #e3f2fd;
+        }
+
+        /* Footer */
+        .footer {
+            background: linear-gradient(135deg, #263238 0%, #37474f 100%);
+            color: white;
+            text-align: center;
+            padding: 30px 0;
+            margin-top: 60px;
+        }
+
+        .footer p {
+            color: #b0bec5;
+            font-size: 1rem;
+        }
+
+        /* Hidden elements */
+        .hidden {
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .section {
+                padding: 25px;
+                margin-bottom: 20px;
+            }
+            
+            .columns-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .process-btn {
+                padding: 15px 30px;
+                font-size: 1.1rem;
+            }
+        
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="container">
+            <div class="header-content">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14,2 14,8 20,8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10,9 9,9 8,9"/>
+                </svg>
+                <div>
+                    <h1>محول الملفات إلى Excel</h1>
+                    <p>حول أي ملف أو صورة إلى جدول Excel بسهولة</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container">
+            
+            <!-- File Upload Section -->
+            <div class="section" style="scale: 0.8;">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7,10 12,15 17,10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    رفع الملف
+                </h2>
+                
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" class="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.csv">
+                    
+                    <div id="uploadContent">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="#42a5f5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7,10 12,15 17,10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        <div class="upload-text">اسحب الملف هنا أو اضغط للاختيار</div>
+                        <div class="upload-subtext">يدعم: الصور، PDF، Word، النصوص، CSV</div>
+                    </div>
+                    
+                    <div id="fileInfo" class="hidden">
+                        <img id="preview" src="" alt="الصورة المرفوعة" style="max-width: 250px; display:none; border:3px solid #40a49e; border-radius:10px;">
+                        <div class="file-info" id="fileName"></div>
+                        <div class="upload-subtext">تم الرفع بنجاح - اضغط لتغيير الملف</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Columns Configuration -->
+            <div class="section" style="scale: 0.8;">
+                <div class="columns-header">
+                    <h2 class="section-title">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14,2 14,8 20,8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        تكوين الأعمدة
+                    </h2>
+                    <button class="add-column-btn" id="add-column-btn" onclick="addColumn()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        إضافة عمود
+                    </button>
+                </div>
+
+                <div class="columns-grid" id="columnsGrid">
+                    <div class="column-item">
+                        <div class="column-label">العمود 1</div>
+                        <div class="column-input-group">
+                            <input type="text" class="column-input" placeholder="اسم العمود..." data-column="0" id="column-input">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Process Button -->
+            <div class="process-section">
+                <button class="process-btn" id="processBtn" onclick="processFile()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14,2 14,8 20,8"/>
+                    </svg>
+                    معالجة الملف
+                </button>
+            </div>
+            
+            <p id="delay-msg" class="section-title" style="display:none; font-size: 1rem; text-align: center; color: #dbf7fb;">
+                قد يستغرق الأمر بضع دقائق...
+            </p>
+
+            <div id="info" class="section" style="background: #f7fe7f; scale: 0.5;">
+                <h4 class="section-title">
+                    :يرجي اتباع هذه التعليمات للحصول علي افضل نتيجه ممكنه<br>
+                    اكتب اسماء الاعمده حسب ترتيب بيناتهم في الصورة من الاعلي الي الاسفل-<br>
+                    احيانا لغة النص في الصورة و الاعمده المدخله تلعب دور في النتائج-<br>
+                    نتائج النموذج قد تختلف احيانا من مرات الي اخري-<br>
+                    لا تعتمد علي البيانات المستخرجه من الموقع, يرجي التحقق منها اولا-
+                </h4>
+            </div>
+
+            <div id="loading-game" class="section" style="display:none; scale: 0.8; padding: 0; width: 80%; margin: 0 auto;"> 
+                <iframe src="/static/Untitled-2.html" width="100%" height="300px" style="border: none;"></iframe>
+            </div>
+            <!-- صورة التحميل -->
+            <!-- <div id="loading" style="display: none; text-align:center; margin:20px;mix-blend-mode: multiply;" >
+                <img src="/static/fight.gif" alt="جاري التحميل..." width="250" >
+                <p>نحن نحارب من أجلك...</p>
+            </div>
+
+            <div id="loading2" style="display: none; text-align:center; margin:0px; z-index: 2;mix-blend-mode: multiply;" >
+                <img src="/static/3b61VveWDX.gif" alt="جاري التحميل..." width="100" >
+            </div> -->
+
+            <!-- Data Preview -->
+            <div class="section hidden" id="previewSection">
+                <div class="preview-header">
+                    <h2 class="section-title">معاينة البيانات</h2>
+                    <button class="export-btn" onclick="exportToExcel()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17,8 12,3 7,8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        تصدير Excel
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table class="data-table" id="dataTable">
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <button id="reset" class="process-btn" onclick="resetPage()" style="display: none;"> البدأ من جديد</button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="container">
+            <p>© 2025 محول الملفات إلى Excel - أداة حديثة لتحويل ملفاتك بسهولة</p>
+        </div>
+    </div>
+
+    <script>
+        let uploadedFile = null;
+        let columns = [{ id: 0, name: '' }];
+        let parsedData = [];
+        let columnOrder = [];
+
+        // File upload handling
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadContent = document.getElementById('uploadContent');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const iframe = document.getElementById('loading-game').querySelector('iframe');
+        
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', handleDrag);
+        uploadArea.addEventListener('dragenter', handleDrag);
+        uploadArea.addEventListener('dragleave', handleDragLeave);
+        uploadArea.addEventListener('drop', handleDrop);
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function resetPage() {
+            location.reload(); // هيعمل refresh للصفحة كلها
+        }
+
+        
+uploadArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploadArea.classList.add("drag-over");
+});
+
+uploadArea.addEventListener("dragleave", () => {
+    uploadArea.classList.remove("drag-over");
+});
+
+uploadArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove("drag-over");
+
+    const file = e.dataTransfer.files[0];
+    if (file) {
+        setUploadedFile(file); // نفس دالة رفع الملف عندك
+    }
+});
+
+        function handleDrag(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.add('drag-active');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.remove('drag-active');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.classList.remove('drag-active');
+            
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                setUploadedFile(e.dataTransfer.files[0]);
+            }
+        }
+
+        function handleFileSelect(e) {
+            if (e.target.files && e.target.files[0]) {
+                setUploadedFile(e.target.files[0]);
+            }
+        }
+
+        function setUploadedFile(file) {
+            uploadedFile = file;
+            fileName.textContent = file.name;
+            uploadContent.classList.add('hidden');
+            fileInfo.classList.remove('hidden');
+            uploadArea.classList.add('file-uploaded');
+            updateProcessButton();
+    
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById("preview");
+                    img.src = e.target.result;
+                    img.style.display = "block"; // تظهر الصورة بعد الرفع
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Columns management
+        function addColumn() {
+            const newId = Date.now();
+            columns.push({ id: newId, name: '' });
+            renderColumns();
+        }
+
+        function removeColumn(id) {
+            if (columns.length > 1) {
+                columns = columns.filter(col => col.id !== id);
+                renderColumns();
+                updateProcessButton();
+            }
+        }
+
+        function renderColumns() {
+            const grid = document.getElementById('columnsGrid');
+            grid.innerHTML = '';
+
+            columns.forEach((column, index) => {
+                const columnDiv = document.createElement('div');
+                columnDiv.className = 'column-item';
+                columnDiv.innerHTML =` 
+                    <div class="column-label">العمود ${index + 1}</div>
+                    <div class="column-input-group">
+                        <input type="text" class="column-input" placeholder="اسم العمود..." 
+                               value="${column.name}" data-column="${column.id}" 
+                               oninput="updateColumnName(${column.id}, this.value)">
+                        ${columns.length > 1 ?`
+                            <button class="remove-column-btn" id="remove-column-btn" onclick="removeColumn(${column.id})">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <polyline points="3,6 5,6 21,6"/>
+                                    <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                                </svg>
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+                grid.appendChild(columnDiv);
+            });
+        }
+
+        function updateColumnName(id, name) {
+            const column = columns.find(col => col.id === id);
+            if (column) {
+                column.name = name;
+                updateProcessButton();
+            }
+        }
+
+        function updateProcessButton() {
+            const processBtn = document.getElementById('processBtn');
+            const hasFile = uploadedFile !== null;
+            const hasAllColumnNames = columns.every(col => col.name.trim() !== '');
+            
+            processBtn.disabled = !hasFile || !hasAllColumnNames;
+        }
+
+        
+        function processFile() {
+    if (!uploadedFile || columns.some(col => !col.name.trim())) {
+        alert('يرجى رفع ملف وإدخال جميع أسماء الأعمدة');
+        return;
+    }
+
+    const processBtn = document.getElementById('processBtn');
+    processBtn.disabled = true;
+    processBtn.innerHTML = `
+        <div class="spinner"></div>
+        جاري المعالجة...
+    `;
+
+    //
+    // بعد دقيقه مثلاً يظهر التنبيه
+    setTimeout(function () {
+        if(document.getElementById("loading-game").style.display == "block"){
+        document.getElementById('delay-msg').style.display = 'block';}
+    }, 60000);
+    document.getElementById("loading-game").style.display = "block";
+    iframe.focus();
+    document.getElementById("info").style.display = "none";
+    // document.getElementById("loading").style.display = "block";
+    // document.getElementById("loading2").style.display = "block";
+    document.getElementById("uploadArea").style.pointerEvents = "none";
+    document.getElementById("columnsGrid").style.pointerEvents = "none";
+    document.getElementById("add-column-btn").style.pointerEvents = "none";
+    document.getElementById("uploadArea").style.opacity = "0.6";
+    document.getElementById("columnsGrid").style.opacity = "0.6";
+    document.getElementById("add-column-btn").style.opacity = "0.6";
+    //
+
+    // تجهيز البيانات للإرسال للـ Flask
+    const formData = new FormData();
+    formData.append("file", uploadedFile);
+    formData.append("columns", JSON.stringify(columns.map(col => col.name)));
+
+    fetch("/process", {
+        method: "POST",
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+
+        if (data.error) {
+            alert(data.error); // ✅ رسالة خطأ تظهر في Alert
+            
+                    // إرجاع واجهة المستخدم للحالة الطبيعية في حالة الخطأ
+        document.getElementById('delay-msg').style.display = 'none';
+        document.getElementById("loading-game").style.display = "none";
+        iframe.contentWindow.postMessage('stopGame', '*');
+        processBtn.disabled = false;
+        processBtn.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+            </svg>
+            معالجة الملف
+        `;
+        document.getElementById("uploadArea").style.pointerEvents = "auto";
+        document.getElementById("columnsGrid").style.pointerEvents = "auto";
+        document.getElementById("add-column-btn").style.pointerEvents = "auto";
+        document.getElementById("uploadArea").style.opacity = "1";
+        document.getElementById("columnsGrid").style.opacity = "1";
+        document.getElementById("add-column-btn").style.opacity = "1";
+
+        data.columns = null;
+        data.rows = null;
+        return; // ❌ وقف أي معالجة تانية
+        }
+
+        columnOrder = data.columns; // ✅ خزّن الأعمدة بالترتيب
+        parsedData = data.rows.map(row => {
+            // نرجع صف جديد بالترتيب الصحيح
+            const orderedRow = {};
+            columnOrder.forEach(col => {
+                orderedRow[col] = row[col];
+            });
+            return orderedRow;
+        });
+
+        //
+        document.getElementById('delay-msg').style.display = 'none';
+        document.getElementById("loading-game").style.display = "none";
+        iframe.contentWindow.postMessage('stopGame', '*');
+        // document.getElementById("loading").style.display = "none";
+        // document.getElementById("loading2").style.display = "none";
+        processBtn.style.display = "none";
+        document.getElementById("reset").style.display = "block";
+        //
+        
+        displayPreview(data);
+    })
+    .catch(err => {
+        alert("حصل خطأ في المعالجة");
+        console.error(err);
+        // إرجاع واجهة المستخدم للحالة الطبيعية في حالة الخطأ
+        document.getElementById('delay-msg').style.display = 'none';
+        document.getElementById("loading-game").style.display = "none";
+        iframe.contentWindow.postMessage('stopGame', '*');
+        processBtn.disabled = false;
+        processBtn.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+            </svg>
+            معالجة الملف
+        `;
+        document.getElementById("uploadArea").style.pointerEvents = "auto";
+        document.getElementById("columnsGrid").style.pointerEvents = "auto";
+        document.getElementById("add-column-btn").style.pointerEvents = "auto";
+        document.getElementById("uploadArea").style.opacity = "1";
+        document.getElementById("columnsGrid").style.opacity = "1";
+        document.getElementById("add-column-btn").style.opacity = "1";
+    });
+}
+
+        function displayPreview(data) {  // خدي data كوسيط
+            if (!data.columns || data.columns.length === 0 || !data.rows || data.rows.length === 0) {
+                alert("❌ لا توجد بيانات أو أعمدة للعرض.");
+                return;
+            }
+    const previewSection = document.getElementById('previewSection');
+    const tableHead = document.getElementById('tableHead');
+    const tableBody = document.getElementById('tableBody');
+
+    // Create table header
+    const headerRow = document.createElement('tr');
+    const cols = data.columns; // الأعمدة اللي رجعت من السيرفر
+    cols.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col;
+        headerRow.appendChild(th);
+    });
+    tableHead.innerHTML = '';
+    tableHead.appendChild(headerRow);
+
+    // Create table body
+    tableBody.innerHTML = '';
+    data.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        cols.forEach(col => {
+            const td = document.createElement('td');
+            let cellValue = row[col];
+            // لو القيمة List أو Array، حوّليها لنص
+            if (Array.isArray(cellValue)) {
+                cellValue = cellValue.join(", ");
+            }
+            td.textContent = cellValue ?? '';
+            tr.appendChild(td);
+        });
+        tableBody.appendChild(tr);
+    });
+
+    previewSection.style.direction = "ltr";
+    previewSection.style.textAlign = "left";
+    previewSection.classList.remove('hidden');
+
+}
+
+
+function exportToExcel() {
+    if (parsedData.length === 0) return;
+
+    // تحويل البيانات إلى ورقة Excel مع تحديد ترتيب الأعمدة
+    const worksheet = XLSX.utils.json_to_sheet(parsedData, { header: columnOrder });
+
+    // إضافة الورقة إلى ملف Excel
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'البيانات');
+
+    // إنشاء الملف وتحميله
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    
+    saveAs(blob, `البيانات_المحولة_${new Date().getTime()}.xlsx`);
+    }
+
+        // Initialize
+        renderColumns();
+        updateProcessButton();
+    </script>
+</body>
+</html>
